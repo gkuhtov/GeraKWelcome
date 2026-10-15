@@ -4,9 +4,11 @@
 
 ### Приветственные интерфейсы для iOS
 
-**Первое впечатление — тоже часть приложения.**
+**Визуальные темы и экраны, формирующие первое впечатление.**
 
-[Каталог GeraKStore](https://github.com/gkuhtov/GeraKStore) · [Экосистема GeraK](https://github.com/gkuhtov/GeraKProtocol)
+[Основной каталог](https://github.com/gkuhtov/GeraKStore) · [Документация](https://github.com/gkuhtov/GeraKProtocol)
+
+[Профиль автора](https://github.com/gkuhtov)
 
 </div>
 
@@ -49,10 +51,10 @@
 - [GeraKStore-Web](https://github.com/gkuhtov/GeraKStore-Web) — веб-интерфейс.
 - [GeraKProtocol](https://github.com/gkuhtov/GeraKProtocol) — документация экосистемы.
 
+---
+
 ## 👤 Авторство
 
 **Гера Кухтов / madebygood** · [GitHub](https://github.com/gkuhtov)
 
----
-
-<sub>GeraKStore Welcome · Документация проекта · Русский язык</sub>
+<sub>Экосистема GeraK · Документация на русском языке</sub>
