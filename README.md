@@ -46,8 +46,8 @@
 ## 🔗 Связь с экосистемой
 
 - [GeraKStore](https://github.com/gkuhtov/GeraKStore) — основной каталог.
-- [GeraKStore-Manager](https://github.com/gkuhtov/GeraKStore-Manager) — управление каталогом.
-- [GeraKStore-Web](https://github.com/gkuhtov/GeraKStore-Web) — веб-интерфейс.
+- [GeraKManager](https://github.com/gkuhtov/GeraKManager) — управление каталогом.
+- [GeraKWeb](https://github.com/gkuhtov/GeraKWeb) — веб-интерфейс.
 - [GeraKProtocol](https://github.com/gkuhtov/GeraKProtocol) — документация экосистемы.
 
 ---
