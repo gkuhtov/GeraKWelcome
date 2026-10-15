@@ -4,7 +4,6 @@
 
 ### Приветственные интерфейсы для iOS
 
-**👋 Встречаем приложения красиво. Дальше они уже сами по себе.**
 
 [Основной каталог](https://github.com/gkuhtov/GeraKStore) · [Документация](https://github.com/gkuhtov/GeraKProtocol)
 
