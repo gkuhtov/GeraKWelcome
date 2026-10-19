@@ -676,7 +676,7 @@ static UIWindow *gWelcomeIslandWindow = nil;
     }
 
     gWelcomeIslandWindow.frame = screenBounds;
-    gWelcomeIslandWindow.windowLevel = UIWindowLevelStatusBar + 1.0;
+    gWelcomeIslandWindow.windowLevel = UIWindowLevelStatusBar + 999.0;
     gWelcomeIslandWindow.backgroundColor = [UIColor clearColor];
     gWelcomeIslandWindow.opaque = NO;
     gWelcomeIslandWindow.userInteractionEnabled = NO;
@@ -702,7 +702,7 @@ static UIWindow *gWelcomeIslandWindow = nil;
     CGFloat initialX = (screenW - initialW) / 2.0;
 
     CGFloat expandedW = MIN(screenW - 24.0, 360.0);
-    CGFloat expandedH = (topInset > 50.0) ? 72.0 : 56.0;
+    CGFloat expandedH = (topInset > 50.0) ? 74.0 : 56.0;
     CGFloat expandedX = (screenW - expandedW) / 2.0;
     CGFloat expandedY = initialY;
 
@@ -719,8 +719,9 @@ static UIWindow *gWelcomeIslandWindow = nil;
     islandContainer.clipsToBounds = YES;
     islandContainer.userInteractionEnabled = NO;
 
-    CGFloat labelY = (topInset > 50.0) ? 43.0 : 26.0;
-    UILabel *toastLabel = [[UILabel alloc] initWithFrame:CGRectMake(14.0, labelY, expandedW - 28.0, 22.0)];
+    CGFloat labelY = (topInset > 50.0) ? 46.0 : 26.0;
+    CGFloat labelH = 22.0;
+    UILabel *toastLabel = [[UILabel alloc] initWithFrame:CGRectMake(14.0, labelY, expandedW - 28.0, labelH)];
     toastLabel.text = @"🤝 Чисто по-братски, с тебя шаурма";
     toastLabel.textAlignment = NSTextAlignmentCenter;
 
