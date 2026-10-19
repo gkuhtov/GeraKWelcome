@@ -793,7 +793,7 @@ static GeraKIslandGeometryProfile GeraKProfileForDevice(NSString *model, CGSize 
             }
         }
         if (!scene) {
-            NSLog(@"[WelcomeToJapan] Island overlay skipped: no active window scene.");
+            NSLog(@"[WelcomeToJapan] Показ плашки пропущен: нет активной сцены окна.");
             [self finishSeamlessIslandMorphing];
             return;
         }
@@ -803,7 +803,7 @@ static GeraKIslandGeometryProfile GeraKProfileForDevice(NSString *model, CGSize 
     }
 
     if (!s_islandWindow) {
-        NSLog(@"[WelcomeToJapan] Island overlay skipped: window creation failed.");
+        NSLog(@"[WelcomeToJapan] Показ плашки пропущен: не удалось создать окно.");
         [self finishSeamlessIslandMorphing];
         return;
     }
@@ -811,7 +811,7 @@ static GeraKIslandGeometryProfile GeraKProfileForDevice(NSString *model, CGSize 
     CGSize screenSize = scene ? scene.coordinateSpace.bounds.size : [UIScreen mainScreen].bounds.size;
     if (screenSize.width <= 0.0 || screenSize.height <= 0.0 ||
         screenSize.width < 180.0 || screenSize.height < 120.0) {
-        NSLog(@"[WelcomeToJapan] Island overlay skipped: invalid screen geometry.");
+        NSLog(@"[WelcomeToJapan] Показ плашки пропущен: некорректная геометрия экрана.");
         [self finishSeamlessIslandMorphing];
         return;
     }
@@ -825,7 +825,7 @@ static GeraKIslandGeometryProfile GeraKProfileForDevice(NSString *model, CGSize 
     CGFloat expandedH = 74.0;
 
     if (expandedW < 180.0 || expandedW > screenW || expandedH > screenSize.height - initialY) {
-        NSLog(@"[WelcomeToJapan] Island overlay skipped: geometry does not fit.");
+        NSLog(@"[WelcomeToJapan] Показ плашки пропущен: геометрия не подходит.");
         [self finishSeamlessIslandMorphing];
         return;
     }
@@ -861,7 +861,7 @@ static GeraKIslandGeometryProfile GeraKProfileForDevice(NSString *model, CGSize 
         }
     }
     if (!messageFont) {
-        NSLog(@"[WelcomeToJapan] Island overlay skipped: message does not fit.");
+        NSLog(@"[WelcomeToJapan] Показ плашки пропущен: текст не помещается.");
         [self finishSeamlessIslandMorphing];
         return;
     }
