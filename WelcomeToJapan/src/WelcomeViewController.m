@@ -5,6 +5,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #import <sys/sysctl.h>
+#import <math.h>
 
 static UIWindow *s_islandWindow = nil;
 static BOOL s_islandMorphingActive = NO;
@@ -54,14 +55,47 @@ static GeraKIslandGeometryProfile GeraKProfileForDevice(NSString *model, CGSize 
         return (GeraKIslandGeometryProfile){ GeraKIslandScreenFamilyNoNotch, 340.0, 11.0 };
     }
 
-    // Для неизвестных моделей используем ближайший консервативный профиль.
-    // Геометрия помогает подобрать размеры, но сама по себе не доказывает тип выреза.
+    // Для неизвестной модели выбираем ближайший известный профиль по реальным размерам.
+    // Размеры не доказывают тип выреза, поэтому модельные идентификаторы выше имеют приоритет.
     CGFloat shortSide = MIN(screenSize.width, screenSize.height);
     CGFloat longSide = MAX(screenSize.width, screenSize.height);
-    if (longSide <= 667.0 && shortSide <= 375.0) {
-        return (GeraKIslandGeometryProfile){ GeraKIslandScreenFamilyNoNotch, 340.0, 11.0 };
+    static const struct {
+        CGFloat shortSide;
+        CGFloat longSide;
+        GeraKIslandScreenFamily family;
+        CGFloat maxExpandedWidth;
+    } knownProfiles[] = {
+        { 320.0, 568.0, GeraKIslandScreenFamilyNoNotch, 340.0 },
+        { 375.0, 667.0, GeraKIslandScreenFamilyNoNotch, 340.0 },
+        { 414.0, 736.0, GeraKIslandScreenFamilyNoNotch, 340.0 },
+        { 360.0, 780.0, GeraKIslandScreenFamilyClassicNotch, 352.0 },
+        { 375.0, 812.0, GeraKIslandScreenFamilyClassicNotch, 352.0 },
+        { 390.0, 844.0, GeraKIslandScreenFamilyClassicNotch, 352.0 },
+        { 414.0, 896.0, GeraKIslandScreenFamilyClassicNotch, 352.0 },
+        { 428.0, 926.0, GeraKIslandScreenFamilyClassicNotch, 352.0 },
+        { 393.0, 852.0, GeraKIslandScreenFamilyDynamicIsland, 364.0 },
+        { 402.0, 874.0, GeraKIslandScreenFamilyDynamicIsland, 364.0 },
+        { 430.0, 932.0, GeraKIslandScreenFamilyDynamicIsland, 364.0 },
+        { 440.0, 956.0, GeraKIslandScreenFamilyDynamicIsland, 364.0 }
+    };
+
+    NSUInteger nearestIndex = 0;
+    CGFloat nearestDistance = CGFLOAT_MAX;
+    for (NSUInteger index = 0; index < sizeof(knownProfiles) / sizeof(knownProfiles[0]); index++) {
+        CGFloat widthDistance = fabs(shortSide - knownProfiles[index].shortSide);
+        CGFloat heightDistance = fabs(longSide - knownProfiles[index].longSide);
+        CGFloat distance = widthDistance + heightDistance;
+        if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestIndex = index;
+        }
     }
-    return (GeraKIslandGeometryProfile){ GeraKIslandScreenFamilyClassicNotch, 352.0, 11.0 };
+
+    return (GeraKIslandGeometryProfile){
+        knownProfiles[nearestIndex].family,
+        knownProfiles[nearestIndex].maxExpandedWidth,
+        11.0
+    };
 }
 
 @interface GeraKIslandOverlayController : UIViewController
