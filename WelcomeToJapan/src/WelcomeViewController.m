@@ -5,6 +5,23 @@
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 
+#import <objc/runtime.h>
+
+// Окно анимации удерживается независимо от жизненного цикла модального экрана.
+static UIWindow *gWelcomeIslandWindow = nil;
+
+@interface WelcomeIslandOverlayController : UIViewController
+@end
+
+@implementation WelcomeIslandOverlayController
+- (BOOL)prefersStatusBarHidden { return YES; }
+- (UIStatusBarStyle)preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor clearColor];
+}
+@end
+
 @interface WelcomeViewController ()
 @property (nonatomic, strong) UIView *solidBackdropView;
 @property (nonatomic, strong) UIView *sceneContainer;
@@ -131,8 +148,19 @@
     [self prepareInitialEntryStates];
 }
 
+- (BOOL)prefersStatusBarHidden {
+    return YES;
+}
+
 - (UIStatusBarStyle)preferredStatusBarStyle {
     return UIStatusBarStyleLightContent;
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+
+    self.modalPresentationCapturesStatusBarAppearance = YES;
+    [self setNeedsStatusBarAppearanceUpdate];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -595,34 +623,88 @@
 #pragma mark - Бесшовный Dynamic Island Morphing (Pixel-Perfect под камерой)
 
 - (void)triggerSeamlessIslandMorphing {
+    // Отдельное окно переживает закрытие приветственного контроллера
+    // и располагается выше системного статус-бара.
+    if (gWelcomeIslandWindow) {
+        return;
+    }
+
     UIWindow *targetWindow = nil;
+    UIWindowScene *activeScene = nil;
+
     if (@available(iOS 13.0, *)) {
-        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if ([scene isKindOfClass:[UIWindowScene class]] && scene.activationState == UISceneActivationStateForegroundActive) {
-                for (UIWindow *win in scene.windows) {
-                    if (win.isKeyWindow) { targetWindow = win; break; }
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (![scene isKindOfClass:[UIWindowScene class]] ||
+                scene.activationState != UISceneActivationStateForegroundActive) {
+                continue;
+            }
+
+            UIWindowScene *windowScene = (UIWindowScene *)scene;
+            for (UIWindow *candidate in windowScene.windows) {
+                if (candidate.isKeyWindow) {
+                    targetWindow = candidate;
+                    activeScene = windowScene;
+                    break;
                 }
             }
+            if (targetWindow) break;
         }
     }
-    if (!targetWindow) targetWindow = [UIApplication sharedApplication].keyWindow;
+
+    if (!targetWindow) {
+        targetWindow = [UIApplication sharedApplication].keyWindow;
+        if (@available(iOS 13.0, *)) {
+            activeScene = targetWindow.windowScene;
+        }
+    }
     if (!targetWindow) return;
 
-    CGFloat screenW = targetWindow.bounds.size.width;
-    CGFloat topInset = 0;
+    CGRect screenBounds = targetWindow.bounds;
+    CGFloat screenW = CGRectGetWidth(screenBounds);
+    CGFloat topInset = 0.0;
     if (@available(iOS 11.0, *)) {
         topInset = targetWindow.safeAreaInsets.top;
     }
 
-    // Исходные координаты физического выреза (125 × 37 pt на Y = 11 pt)
+    // Удерживаем окно в сильной ссылке до полного завершения анимации.
+    if (@available(iOS 13.0, *)) {
+        if (activeScene) {
+            gWelcomeIslandWindow = [[UIWindow alloc] initWithWindowScene:activeScene];
+        } else {
+            gWelcomeIslandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        }
+    } else {
+        gWelcomeIslandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    }
+
+    gWelcomeIslandWindow.frame = screenBounds;
+    gWelcomeIslandWindow.windowLevel = UIWindowLevelStatusBar + 1.0;
+    gWelcomeIslandWindow.backgroundColor = [UIColor clearColor];
+    gWelcomeIslandWindow.opaque = NO;
+    gWelcomeIslandWindow.userInteractionEnabled = NO;
+
+    WelcomeIslandOverlayController *overlayController = [[WelcomeIslandOverlayController alloc] init];
+    gWelcomeIslandWindow.rootViewController = overlayController;
+    [overlayController loadViewIfNeeded];
+    overlayController.view.frame = gWelcomeIslandWindow.bounds;
+    overlayController.view.backgroundColor = [UIColor clearColor];
+    overlayController.view.userInteractionEnabled = NO;
+
+    // Непрозрачная полоса физически перекрывает часы и индикаторы,
+    // а не полагается только на prefersStatusBarHidden.
+    CGFloat coverHeight = MAX(topInset, 24.0);
+    UIView *statusBarCover = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, screenW, coverHeight)];
+    statusBarCover.backgroundColor = [UIColor blackColor];
+    statusBarCover.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
+    [overlayController.view addSubview:statusBarCover];
+
     CGFloat initialW = 125.0;
     CGFloat initialH = 37.0;
-    CGFloat initialY = (topInset > 50) ? 11.0 : 10.0;
+    CGFloat initialY = (topInset > 50.0) ? 11.0 : 10.0;
     CGFloat initialX = (screenW - initialW) / 2.0;
 
-    // Раскрытие: ширина 360 pt, высота 72 pt (вытягивается вниз под аппаратный глазок)
     CGFloat expandedW = MIN(screenW - 24.0, 360.0);
-    CGFloat expandedH = (topInset > 50) ? 72.0 : 56.0;
+    CGFloat expandedH = (topInset > 50.0) ? 72.0 : 56.0;
     CGFloat expandedX = (screenW - expandedW) / 2.0;
     CGFloat expandedY = initialY;
 
@@ -639,13 +721,11 @@
     islandContainer.clipsToBounds = YES;
     islandContainer.userInteractionEnabled = NO;
 
-    // Строка садится строго ниже камеры (начиная с 43 pt от верха контейнера)
-    CGFloat labelY = (topInset > 50) ? 43.0 : 26.0;
-    CGFloat labelH = 22.0;
-    UILabel *toastLabel = [[UILabel alloc] initWithFrame:CGRectMake(14.0, labelY, expandedW - 28.0, labelH)];
+    CGFloat labelY = (topInset > 50.0) ? 43.0 : 26.0;
+    UILabel *toastLabel = [[UILabel alloc] initWithFrame:CGRectMake(14.0, labelY, expandedW - 28.0, 22.0)];
     toastLabel.text = @"🤝 Чисто по-братски, с тебя шаурма";
     toastLabel.textAlignment = NSTextAlignmentCenter;
-    
+
     UIFont *toastFont = [UIFont fontWithName:@"Georgia-Bold" size:13.5];
     if (!toastFont) toastFont = [UIFont boldSystemFontOfSize:13.5];
     toastLabel.font = toastFont;
@@ -653,39 +733,55 @@
     toastLabel.alpha = 0.0;
     toastLabel.transform = CGAffineTransformMakeScale(0.85, 0.85);
     [islandContainer addSubview:toastLabel];
+    [overlayController.view addSubview:islandContainer];
 
-    [targetWindow addSubview:islandContainer];
+    // Показываем окно выше статус-бара, не делая его key window.
+    gWelcomeIslandWindow.hidden = NO;
 
-    // Фаза 1: Остров вытягивается вниз и в стороны
-    [UIView animateWithDuration:0.48 delay:0.04 usingSpringWithDamping:0.74 initialSpringVelocity:0.7 options:0 animations:^{
+    [UIView animateWithDuration:0.48
+                          delay:0.04
+         usingSpringWithDamping:0.74
+          initialSpringVelocity:0.7
+                        options:UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{
         islandContainer.frame = CGRectMake(expandedX, expandedY, expandedW, expandedH);
         islandContainer.layer.cornerRadius = expandedH / 2.0;
         islandContainer.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.95].CGColor;
         islandContainer.layer.shadowRadius = 16.0;
     } completion:nil];
 
-    // Фаза 2: Проявление надписи строго в чистой нижней зоне острова
-    [UIView animateWithDuration:0.25 delay:0.20 options:UIViewAnimationOptionCurveEaseOut animations:^{
+    [UIView animateWithDuration:0.25
+                          delay:0.20
+                        options:UIViewAnimationOptionCurveEaseOut
+                     animations:^{
         toastLabel.alpha = 1.0;
         toastLabel.transform = CGAffineTransformIdentity;
     } completion:^(BOOL finished) {
-        [self.selectionFeedback prepare];
-        [self.selectionFeedback selectionChanged];
+        UISelectionFeedbackGenerator *feedback = [[UISelectionFeedbackGenerator alloc] init];
+        [feedback prepare];
+        [feedback selectionChanged];
 
-        // Фаза 3: Висит 2.8 сек, затем аккуратно втягивается обратно в вырез камеры
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIView animateWithDuration:0.14 animations:^{
                 toastLabel.alpha = 0.0;
                 toastLabel.transform = CGAffineTransformMakeScale(0.80, 0.80);
             }];
 
-            [UIView animateWithDuration:0.38 delay:0.06 usingSpringWithDamping:0.85 initialSpringVelocity:0.4 options:0 animations:^{
+            [UIView animateWithDuration:0.38
+                                  delay:0.06
+                 usingSpringWithDamping:0.85
+                  initialSpringVelocity:0.4
+                                options:UIViewAnimationOptionBeginFromCurrentState
+                             animations:^{
                 islandContainer.frame = CGRectMake(initialX, initialY, initialW, initialH);
                 islandContainer.layer.cornerRadius = initialH / 2.0;
                 islandContainer.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.0].CGColor;
                 islandContainer.layer.shadowOpacity = 0.0;
-            } completion:^(BOOL fin) {
-                [islandContainer removeFromSuperview];
+            } completion:^(BOOL finished) {
+                // Сначала убираем окно верхнего уровня, затем освобождаем ссылку.
+                gWelcomeIslandWindow.hidden = YES;
+                gWelcomeIslandWindow.rootViewController = nil;
+                gWelcomeIslandWindow = nil;
             }];
         });
     }];
