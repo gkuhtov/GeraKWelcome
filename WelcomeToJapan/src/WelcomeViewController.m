@@ -4,8 +4,65 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
+#import <sys/sysctl.h>
 
 static UIWindow *s_islandWindow = nil;
+static BOOL s_islandMorphingActive = NO;
+static NSUInteger s_islandMorphingGeneration = 0;
+
+typedef NS_ENUM(NSUInteger, GeraKIslandScreenFamily) {
+    GeraKIslandScreenFamilyDynamicIsland,
+    GeraKIslandScreenFamilyClassicNotch,
+    GeraKIslandScreenFamilyNoNotch
+};
+
+typedef struct {
+    GeraKIslandScreenFamily family;
+    CGFloat maxExpandedWidth;
+    CGFloat topOffset;
+} GeraKIslandGeometryProfile;
+
+static NSString *GeraKDeviceModelIdentifier(void) {
+    char machine[256] = {0};
+    size_t size = sizeof(machine);
+    if (sysctlbyname("hw.machine", machine, &size, NULL, 0) == 0) {
+        NSString *identifier = [NSString stringWithUTF8String:machine];
+        return identifier ?: @"";
+    }
+    return @"";
+}
+
+static GeraKIslandGeometryProfile GeraKProfileForDevice(NSString *model, CGSize screenSize) {
+    NSArray<NSString *> *dynamicIslandModels = @[
+        @"iPhone15,2", @"iPhone15,3", @"iPhone15,4", @"iPhone15,5",
+        @"iPhone16,1", @"iPhone16,2",
+        @"iPhone17,1", @"iPhone17,2", @"iPhone17,3", @"iPhone17,4",
+        @"iPhone18,1", @"iPhone18,2", @"iPhone18,3", @"iPhone18,4"
+    ];
+    NSArray<NSString *> *noNotchModels = @[
+        @"iPhone6,1", @"iPhone6,2", @"iPhone7,1", @"iPhone7,2",
+        @"iPhone8,1", @"iPhone8,2", @"iPhone8,4",
+        @"iPhone9,1", @"iPhone9,2", @"iPhone9,3", @"iPhone9,4",
+        @"iPhone10,1", @"iPhone10,2", @"iPhone10,4", @"iPhone10,5",
+        @"iPhone12,8", @"iPhone14,6"
+    ];
+
+    if ([dynamicIslandModels containsObject:model]) {
+        return (GeraKIslandGeometryProfile){ GeraKIslandScreenFamilyDynamicIsland, 364.0, 11.0 };
+    }
+    if ([noNotchModels containsObject:model]) {
+        return (GeraKIslandGeometryProfile){ GeraKIslandScreenFamilyNoNotch, 340.0, 11.0 };
+    }
+
+    // Для неизвестных моделей используем ближайший консервативный профиль.
+    // Геометрия помогает подобрать размеры, но сама по себе не доказывает тип выреза.
+    CGFloat shortSide = MIN(screenSize.width, screenSize.height);
+    CGFloat longSide = MAX(screenSize.width, screenSize.height);
+    if (longSide <= 667.0 && shortSide <= 375.0) {
+        return (GeraKIslandGeometryProfile){ GeraKIslandScreenFamilyNoNotch, 340.0, 11.0 };
+    }
+    return (GeraKIslandGeometryProfile){ GeraKIslandScreenFamilyClassicNotch, 352.0, 11.0 };
+}
 
 @interface GeraKIslandOverlayController : UIViewController
 @property (nonatomic, assign) BOOL shouldHideStatusBar;
@@ -45,6 +102,10 @@ static UIWindow *s_islandWindow = nil;
 @property (nonatomic, strong) UIImpactFeedbackGenerator *heavyFeedback;
 @property (nonatomic, strong) UIImpactFeedbackGenerator *lightFeedback;
 @property (nonatomic, strong) UISelectionFeedbackGenerator *selectionFeedback;
+@property (nonatomic, strong) UIView *islandMorphingPill;
+@property (nonatomic, strong) UILabel *islandMorphingLabel;
+@property (nonatomic, assign) BOOL islandMorphingActive;
+@property (nonatomic, assign) NSUInteger islandMorphingGeneration;
 @end
 
 @implementation WelcomeViewController
@@ -617,7 +678,77 @@ static UIWindow *s_islandWindow = nil;
 
 #pragma mark - Бесшовный Dynamic Island Morphing (Pixel-Perfect под камерой)
 
+- (void)handleIslandApplicationWillResignActive {
+    [self finishSeamlessIslandMorphing];
+}
+
+- (void)handleIslandApplicationDidEnterBackground {
+    [self finishSeamlessIslandMorphing];
+}
+
+- (void)finishSeamlessIslandMorphing {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self finishSeamlessIslandMorphing];
+        });
+        return;
+    }
+
+    if (!self.islandMorphingActive) {
+        return;
+    }
+
+    self.islandMorphingActive = NO;
+    s_islandMorphingActive = NO;
+    s_islandMorphingGeneration += 1;
+
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    [center removeObserver:self name:UIApplicationWillResignActiveNotification object:nil];
+    [center removeObserver:self name:UIApplicationDidEnterBackgroundNotification object:nil];
+
+    [self.islandMorphingPill.layer removeAllAnimations];
+    [self.islandMorphingLabel.layer removeAllAnimations];
+
+    GeraKIslandOverlayController *overlayVC = nil;
+    if ([s_islandWindow.rootViewController isKindOfClass:[GeraKIslandOverlayController class]]) {
+        overlayVC = (GeraKIslandOverlayController *)s_islandWindow.rootViewController;
+        overlayVC.shouldHideStatusBar = NO;
+        [overlayVC setNeedsStatusBarAppearanceUpdate];
+    }
+
+    s_islandWindow.hidden = YES;
+    s_islandWindow.rootViewController = nil;
+    s_islandWindow = nil;
+
+    self.islandMorphingPill = nil;
+    self.islandMorphingLabel = nil;
+    [self.view removeFromSuperview];
+
+    void (^completionBlock)(void) = self.standaloneCompletion;
+    self.standaloneCompletion = nil;
+    if (completionBlock) {
+        completionBlock();
+    }
+}
+
 - (void)triggerSeamlessIslandMorphing {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self triggerSeamlessIslandMorphing];
+        });
+        return;
+    }
+
+    // Повторный вызов во время активной анимации не ставится в очередь и не перезапускает её.
+    if (s_islandMorphingActive) {
+        return;
+    }
+
+    s_islandMorphingActive = YES;
+    self.islandMorphingActive = YES;
+    NSUInteger generation = ++s_islandMorphingGeneration;
+    self.islandMorphingGeneration = generation;
+
     UIWindowScene *scene = nil;
     if (@available(iOS 13.0, *)) {
         for (UIScene *connectedScene in [UIApplication sharedApplication].connectedScenes) {
@@ -627,16 +758,78 @@ static UIWindow *s_islandWindow = nil;
                 break;
             }
         }
-    }
-
-    if (@available(iOS 13.0, *)) {
-        if (scene) {
-            s_islandWindow = [[UIWindow alloc] initWithWindowScene:scene];
-        } else {
-            s_islandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        if (!scene) {
+            NSLog(@"[WelcomeToJapan] Island overlay skipped: no active window scene.");
+            [self finishSeamlessIslandMorphing];
+            return;
         }
+        s_islandWindow = [[UIWindow alloc] initWithWindowScene:scene];
     } else {
         s_islandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    }
+
+    if (!s_islandWindow) {
+        NSLog(@"[WelcomeToJapan] Island overlay skipped: window creation failed.");
+        [self finishSeamlessIslandMorphing];
+        return;
+    }
+
+    CGSize screenSize = scene ? scene.coordinateSpace.bounds.size : [UIScreen mainScreen].bounds.size;
+    if (screenSize.width <= 0.0 || screenSize.height <= 0.0 ||
+        screenSize.width < 180.0 || screenSize.height < 120.0) {
+        NSLog(@"[WelcomeToJapan] Island overlay skipped: invalid screen geometry.");
+        [self finishSeamlessIslandMorphing];
+        return;
+    }
+
+    GeraKIslandGeometryProfile profile = GeraKProfileForDevice(GeraKDeviceModelIdentifier(), screenSize);
+    CGFloat screenW = screenSize.width;
+    CGFloat initialW = 125.0;
+    CGFloat initialH = 37.0;
+    CGFloat initialY = profile.topOffset;
+    CGFloat expandedW = MIN(screenW - 24.0, profile.maxExpandedWidth);
+    CGFloat expandedH = 74.0;
+
+    if (expandedW < 180.0 || expandedW > screenW || expandedH > screenSize.height - initialY) {
+        NSLog(@"[WelcomeToJapan] Island overlay skipped: geometry does not fit.");
+        [self finishSeamlessIslandMorphing];
+        return;
+    }
+
+    CGFloat expandedX = (screenW - expandedW) / 2.0;
+    CGFloat initialX = (screenW - initialW) / 2.0;
+    CGFloat labelWidth = expandedW - 24.0;
+
+    NSString *message = @"🤝 Чисто по-братски, с тебя шаурма";
+    NSString *shortMessage = @"🤝 С тебя шаурма";
+    UIFont *(^fontForSize)(CGFloat) = ^UIFont *(CGFloat size) {
+        return [UIFont fontWithName:@"Georgia-Bold" size:size] ?: [UIFont boldSystemFontOfSize:size];
+    };
+
+    UIFont *messageFont = nil;
+    for (CGFloat fontSize = 13.5; fontSize >= 11.0; fontSize -= 0.5) {
+        UIFont *candidate = fontForSize(fontSize);
+        CGFloat measuredWidth = [message sizeWithAttributes:@{ NSFontAttributeName: candidate }].width;
+        if (measuredWidth <= labelWidth) {
+            messageFont = candidate;
+            break;
+        }
+    }
+    if (!messageFont) {
+        message = shortMessage;
+        for (CGFloat fontSize = 13.5; fontSize >= 11.0; fontSize -= 0.5) {
+            UIFont *candidate = fontForSize(fontSize);
+            CGFloat measuredWidth = [message sizeWithAttributes:@{ NSFontAttributeName: candidate }].width;
+            if (measuredWidth <= labelWidth) {
+                messageFont = candidate;
+                break;
+            }
+        }
+    }
+    if (!messageFont) {
+        NSLog(@"[WelcomeToJapan] Island overlay skipped: message does not fit.");
+        [self finishSeamlessIslandMorphing];
+        return;
     }
 
     s_islandWindow.windowLevel = UIWindowLevelStatusBar + 100.0;
@@ -649,17 +842,6 @@ static UIWindow *s_islandWindow = nil;
     s_islandWindow.rootViewController = overlayVC;
     [s_islandWindow makeKeyAndVisible];
 
-    CGFloat screenW = [UIScreen mainScreen].bounds.size.width;
-    CGFloat initialW = 125.0;
-    CGFloat initialH = 37.0;
-    CGFloat initialY = 11.0;
-    CGFloat initialX = (screenW - initialW) / 2.0;
-
-    CGFloat expandedW = MIN(screenW - 24.0, 364.0);
-    CGFloat expandedH = 74.0;
-    CGFloat expandedX = (screenW - expandedW) / 2.0;
-    CGFloat expandedY = initialY;
-
     UIView *island = [[UIView alloc] initWithFrame:CGRectMake(initialX, initialY, initialW, initialH)];
     island.backgroundColor = [UIColor blackColor];
     island.layer.cornerRadius = initialH / 2.0;
@@ -667,14 +849,29 @@ static UIWindow *s_islandWindow = nil;
     island.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.85].CGColor;
     island.clipsToBounds = YES;
 
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(12.0, 46.0, expandedW - 24.0, 22.0)];
-    label.text = @"🤝 Чисто по-братски, с тебя шаурма";
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(12.0, 46.0, labelWidth, 22.0)];
+    label.text = message;
     label.textAlignment = NSTextAlignmentCenter;
-    label.font = [UIFont fontWithName:@"Georgia-Bold" size:13.5] ?: [UIFont boldSystemFontOfSize:13.5];
+    label.numberOfLines = 1;
+    label.lineBreakMode = NSLineBreakByClipping;
+    label.font = messageFont;
     label.textColor = [UIColor colorWithRed:0.98 green:0.95 blue:0.88 alpha:1.0];
     label.alpha = 0.0;
     [island addSubview:label];
     [overlayVC.view addSubview:island];
+
+    self.islandMorphingPill = island;
+    self.islandMorphingLabel = label;
+
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    [center addObserver:self
+               selector:@selector(handleIslandApplicationWillResignActive)
+                   name:UIApplicationWillResignActiveNotification
+                 object:nil];
+    [center addObserver:self
+               selector:@selector(handleIslandApplicationDidEnterBackground)
+                   name:UIApplicationDidEnterBackgroundNotification
+                 object:nil];
 
     [UIView animateWithDuration:0.42
                           delay:0.02
@@ -682,7 +879,7 @@ static UIWindow *s_islandWindow = nil;
           initialSpringVelocity:0.6
                         options:0
                      animations:^{
-        island.frame = CGRectMake(expandedX, expandedY, expandedW, expandedH);
+        island.frame = CGRectMake(expandedX, initialY, expandedW, expandedH);
         island.layer.cornerRadius = expandedH / 2.0;
     } completion:nil];
 
@@ -692,10 +889,22 @@ static UIWindow *s_islandWindow = nil;
                      animations:^{
         label.alpha = 1.0;
     } completion:^(BOOL finished) {
+        if (!finished || !self.islandMorphingActive ||
+            self.islandMorphingGeneration != generation ||
+            s_islandMorphingGeneration != generation) {
+            return;
+        }
+
         [self.selectionFeedback prepare];
         [self.selectionFeedback selectionChanged];
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (!self.islandMorphingActive ||
+                self.islandMorphingGeneration != generation ||
+                s_islandMorphingGeneration != generation) {
+                return;
+            }
+
             [UIView animateWithDuration:0.15 animations:^{
                 label.alpha = 0.0;
             }];
@@ -709,23 +918,17 @@ static UIWindow *s_islandWindow = nil;
                 island.frame = CGRectMake(initialX, initialY, initialW, initialH);
                 island.layer.cornerRadius = initialH / 2.0;
                 island.layer.borderColor = [UIColor clearColor].CGColor;
-            } completion:^(BOOL fin) {
-                overlayVC.shouldHideStatusBar = NO;
-                [overlayVC setNeedsStatusBarAppearanceUpdate];
-
-                s_islandWindow.hidden = YES;
-                s_islandWindow.rootViewController = nil;
-                s_islandWindow = nil;
-                [self.view removeFromSuperview];
-
-                void (^completionBlock)(void) = self.standaloneCompletion;
-                self.standaloneCompletion = nil;
-                if (completionBlock) completionBlock();
+            } completion:^(BOOL collapseFinished) {
+                if (!self.islandMorphingActive ||
+                    self.islandMorphingGeneration != generation ||
+                    s_islandMorphingGeneration != generation) {
+                    return;
+                }
+                [self finishSeamlessIslandMorphing];
             }];
         });
     }];
 }
-
 #pragma mark - Хореография выхода (Exit Choreography)
 
 - (void)animateDismissalWithCompletion:(void(^)(void))completion {
