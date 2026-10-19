@@ -5,8 +5,6 @@
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 
-#import <objc/runtime.h>
-
 // Окно анимации удерживается независимо от жизненного цикла модального экрана.
 static UIWindow *gWelcomeIslandWindow = nil;
 
