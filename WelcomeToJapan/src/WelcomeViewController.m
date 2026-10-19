@@ -618,8 +618,12 @@ static UIWindow *s_islandWindow = nil;
         }
     }
 
-    if (@available(iOS 13.0, *) && scene) {
-        s_islandWindow = [[UIWindow alloc] initWithWindowScene:scene];
+    if (@available(iOS 13.0, *)) {
+        if (scene) {
+            s_islandWindow = [[UIWindow alloc] initWithWindowScene:scene];
+        } else {
+            s_islandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        }
     } else {
         s_islandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     }
