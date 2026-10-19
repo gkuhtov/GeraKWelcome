@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+      - "feature/**"
+    paths:
+      - "WelcomeToJapan/**"
+      - ".github/workflows/build-welcome-to-japan.yml"
+  pull_request:
+    branches:
+      - main
     paths:
       - "WelcomeToJapan/**"
       - ".github/workflows/build-welcome-to-japan.yml"
