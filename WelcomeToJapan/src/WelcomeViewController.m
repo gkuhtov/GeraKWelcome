@@ -605,112 +605,105 @@ static UIWindow *s_islandWindow = nil;
 #pragma mark - Бесшовный Dynamic Island Morphing (Pixel-Perfect под камерой)
 
 - (void)triggerSeamlessIslandMorphing {
-    CGRect screenBounds = [UIScreen mainScreen].bounds;
-    CGFloat screenW = CGRectGetWidth(screenBounds);
-    const CGFloat initialW = 125.0;
-    const CGFloat initialH = 37.0;
-    const CGFloat initialX = (screenW - initialW) / 2.0;
-    const CGFloat initialY = 11.0;
+    [[UIApplication sharedApplication] setStatusBarHidden:YES withAnimation:UIStatusBarAnimationFade];
 
-    CGFloat expandedW = MIN(screenW - 24.0, 364.0);
-    const CGFloat expandedH = 76.0;
-    CGFloat expandedX = (screenW - expandedW) / 2.0;
-    const CGFloat expandedY = 11.0;
+    UIWindowScene *scene = nil;
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *connectedScene in [UIApplication sharedApplication].connectedScenes) {
+            if (connectedScene.activationState == UISceneActivationStateForegroundActive &&
+                [connectedScene isKindOfClass:[UIWindowScene class]]) {
+                scene = (UIWindowScene *)connectedScene;
+                break;
+            }
+        }
+    }
 
-    // Отдельное прозрачное окно выше системного статус-бара.
-    s_islandWindow = [[UIWindow alloc] initWithFrame:screenBounds];
-    s_islandWindow.windowLevel = 10000001.0;
+    if (@available(iOS 13.0, *) && scene) {
+        s_islandWindow = [[UIWindow alloc] initWithWindowScene:scene];
+    } else {
+        s_islandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    }
+
+    s_islandWindow.windowLevel = UIWindowLevelAlert;
     s_islandWindow.backgroundColor = [UIColor clearColor];
     s_islandWindow.userInteractionEnabled = NO;
 
-    UIViewController *overlayController = [[UIViewController alloc] init];
-    overlayController.view.backgroundColor = [UIColor clearColor];
-    overlayController.view.userInteractionEnabled = NO;
-    s_islandWindow.rootViewController = overlayController;
-
-    // Прозрачное окно не должно пропускать системные индикаторы через область острова.
-    UIView *statusBarCover = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, screenW, 64.0)];
-    statusBarCover.backgroundColor = [UIColor blackColor];
-    statusBarCover.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
-    statusBarCover.userInteractionEnabled = NO;
-    [overlayController.view addSubview:statusBarCover];
-
-    UIView *islandContainer = [[UIView alloc] initWithFrame:CGRectMake(initialX, initialY, initialW, initialH)];
-    islandContainer.backgroundColor = [UIColor blackColor];
-    islandContainer.alpha = 1.0;
-    islandContainer.layer.cornerRadius = 18.5;
-    islandContainer.layer.borderWidth = 0.9;
-    islandContainer.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.80].CGColor;
-    islandContainer.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.88 blue:0.65 alpha:0.75].CGColor;
-    islandContainer.layer.shadowRadius = 14.0;
-    islandContainer.layer.shadowOpacity = 0.85;
-    islandContainer.layer.shadowOffset = CGSizeZero;
-    islandContainer.layer.allowsEdgeAntialiasing = YES;
-    islandContainer.clipsToBounds = YES;
-    islandContainer.userInteractionEnabled = NO;
-
-    UILabel *toastLabel = [[UILabel alloc] initWithFrame:CGRectMake(12.0, 48.0, expandedW - 24.0, 22.0)];
-    toastLabel.text = @"🤝 Чисто по-братски, с тебя шаурма";
-    toastLabel.textAlignment = NSTextAlignmentCenter;
-    toastLabel.font = [UIFont fontWithName:@"Georgia-Bold" size:13.5] ?: [UIFont boldSystemFontOfSize:13.5];
-    toastLabel.textColor = [UIColor colorWithRed:0.98 green:0.95 blue:0.88 alpha:1.0];
-    toastLabel.alpha = 0.0;
-    toastLabel.transform = CGAffineTransformMakeScale(0.85, 0.85);
-    [islandContainer addSubview:toastLabel];
-    [overlayController.view addSubview:islandContainer];
-
-    // Окно показывается поверх уже открывшегося приложения и не забирает фокус.
+    UIViewController *overlayVC = [[UIViewController alloc] init];
+    overlayVC.view.backgroundColor = [UIColor clearColor];
+    s_islandWindow.rootViewController = overlayVC;
     s_islandWindow.hidden = NO;
 
-    [UIView animateWithDuration:0.45
-                          delay:0.04
-         usingSpringWithDamping:0.74
-          initialSpringVelocity:0.7
-                        options:UIViewAnimationOptionBeginFromCurrentState
+    CGFloat screenW = [UIScreen mainScreen].bounds.size.width;
+    CGFloat initialW = 125.0;
+    CGFloat initialH = 37.0;
+    CGFloat initialY = 11.0;
+    CGFloat initialX = (screenW - initialW) / 2.0;
+
+    CGFloat expandedW = MIN(screenW - 24.0, 364.0);
+    CGFloat expandedH = 74.0;
+    CGFloat expandedX = (screenW - expandedW) / 2.0;
+    CGFloat expandedY = initialY;
+
+    UIView *island = [[UIView alloc] initWithFrame:CGRectMake(initialX, initialY, initialW, initialH)];
+    island.backgroundColor = [UIColor blackColor];
+    island.layer.cornerRadius = initialH / 2.0;
+    island.layer.borderWidth = 0.9;
+    island.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.85].CGColor;
+    island.clipsToBounds = YES;
+
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(12.0, 46.0, expandedW - 24.0, 22.0)];
+    label.text = @"🤝 Чисто по-братски, с тебя шаурма";
+    label.textAlignment = NSTextAlignmentCenter;
+    label.font = [UIFont fontWithName:@"Georgia-Bold" size:13.5] ?: [UIFont boldSystemFontOfSize:13.5];
+    label.textColor = [UIColor colorWithRed:0.98 green:0.95 blue:0.88 alpha:1.0];
+    label.alpha = 0.0;
+    [island addSubview:label];
+    [overlayVC.view addSubview:island];
+
+    [UIView animateWithDuration:0.42
+                          delay:0.02
+         usingSpringWithDamping:0.75
+          initialSpringVelocity:0.6
+                        options:0
                      animations:^{
-        islandContainer.frame = CGRectMake(expandedX, expandedY, expandedW, expandedH);
-        islandContainer.layer.cornerRadius = expandedH / 2.0;
-        islandContainer.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.95].CGColor;
-        islandContainer.layer.shadowRadius = 16.0;
+        island.frame = CGRectMake(expandedX, expandedY, expandedW, expandedH);
+        island.layer.cornerRadius = expandedH / 2.0;
+    } completion:nil];
+
+    [UIView animateWithDuration:0.20
+                          delay:0.18
+                        options:UIViewAnimationOptionCurveEaseOut
+                     animations:^{
+        label.alpha = 1.0;
     } completion:^(BOOL finished) {
-        [UIView animateWithDuration:0.22
-                              delay:0.0
-                            options:UIViewAnimationOptionCurveEaseOut
-                         animations:^{
-            toastLabel.alpha = 1.0;
-            toastLabel.transform = CGAffineTransformIdentity;
-        } completion:^(BOOL labelFinished) {
-            UISelectionFeedbackGenerator *feedback = [[UISelectionFeedbackGenerator alloc] init];
-            [feedback prepare];
-            [feedback selectionChanged];
+        [self.selectionFeedback prepare];
+        [self.selectionFeedback selectionChanged];
 
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [UIView animateWithDuration:0.16 animations:^{
-                    toastLabel.alpha = 0.0;
-                    toastLabel.transform = CGAffineTransformMakeScale(0.80, 0.80);
-                }];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [UIView animateWithDuration:0.15 animations:^{
+                label.alpha = 0.0;
+            }];
 
-                [UIView animateWithDuration:0.38
-                                      delay:0.04
-                     usingSpringWithDamping:0.85
-                      initialSpringVelocity:0.4
-                                    options:UIViewAnimationOptionBeginFromCurrentState
-                                 animations:^{
-                    islandContainer.frame = CGRectMake(initialX, initialY, initialW, initialH);
-                    islandContainer.layer.cornerRadius = initialH / 2.0;
-                    islandContainer.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.0].CGColor;
-                    islandContainer.layer.shadowOpacity = 0.0;
-                } completion:^(BOOL collapseFinished) {
-                    s_islandWindow.hidden = YES;
-                    s_islandWindow = nil;
-                    [self.view removeFromSuperview];
+            [UIView animateWithDuration:0.35
+                                  delay:0.05
+                 usingSpringWithDamping:0.85
+                  initialSpringVelocity:0.3
+                                options:0
+                             animations:^{
+                island.frame = CGRectMake(initialX, initialY, initialW, initialH);
+                island.layer.cornerRadius = initialH / 2.0;
+                island.layer.borderColor = [UIColor clearColor].CGColor;
+            } completion:^(BOOL fin) {
+                [[UIApplication sharedApplication] setStatusBarHidden:NO withAnimation:UIStatusBarAnimationFade];
+                s_islandWindow.hidden = YES;
+                s_islandWindow = nil;
+                [self.view removeFromSuperview];
 
-                    void (^completionBlock)(void) = self.standaloneCompletion;
-                    self.standaloneCompletion = nil;
-                    if (completionBlock) completionBlock();
-                }];
-            });
-        }];
+                void (^completionBlock)(void) = self.standaloneCompletion;
+                self.standaloneCompletion = nil;
+                if (completionBlock) completionBlock();
+            }];
+        });
     }];
 }
 
@@ -731,23 +724,12 @@ static UIWindow *s_islandWindow = nil;
 
     self.view.userInteractionEnabled = NO;
 
-    [UIView animateWithDuration:0.23
-                          delay:0.0
-                        options:UIViewAnimationOptionCurveEaseIn
-                     animations:^{
-        // Растворяем весь экран целиком: фон, виньетку, частицы, карточку и кнопки.
-        self.view.alpha = 0.0;
+    [UIView animateWithDuration:0.20 animations:^{
+        self.sceneContainer.alpha = 0.0;
+        self.solidBackdropView.alpha = 0.0;
     } completion:^(BOOL finished) {
-        // Убираем тяжёлые фоновые слои сразу после растворения заставки.
-        [self.solidBackdropView removeFromSuperview];
-        self.solidBackdropView = nil;
-        [self.sceneContainer removeFromSuperview];
-        self.sceneContainer = nil;
-        self.view.backgroundColor = [UIColor clearColor];
-
+        self.view.hidden = YES;
         if (completion) completion();
-
-        // Остров запускается в отдельном окне уже поверх интерфейса хост-приложения.
         [self triggerSeamlessIslandMorphing];
     }];
 }
