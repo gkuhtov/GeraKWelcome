@@ -7,6 +7,19 @@
 
 static UIWindow *s_islandWindow = nil;
 
+@interface GeraKIslandOverlayController : UIViewController
+@property (nonatomic, assign) BOOL shouldHideStatusBar;
+@end
+
+@implementation GeraKIslandOverlayController
+- (BOOL)prefersStatusBarHidden {
+    return self.shouldHideStatusBar;
+}
+- (UIStatusBarAnimation)preferredStatusBarUpdateAnimation {
+    return UIStatusBarAnimationFade;
+}
+@end
+
 @interface WelcomeViewController ()
 @property (nonatomic, strong) UIView *solidBackdropView;
 @property (nonatomic, strong) UIView *sceneContainer;
@@ -605,8 +618,6 @@ static UIWindow *s_islandWindow = nil;
 #pragma mark - Бесшовный Dynamic Island Morphing (Pixel-Perfect под камерой)
 
 - (void)triggerSeamlessIslandMorphing {
-    [[UIApplication sharedApplication] setStatusBarHidden:YES withAnimation:UIStatusBarAnimationFade];
-
     UIWindowScene *scene = nil;
     if (@available(iOS 13.0, *)) {
         for (UIScene *connectedScene in [UIApplication sharedApplication].connectedScenes) {
@@ -628,14 +639,15 @@ static UIWindow *s_islandWindow = nil;
         s_islandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     }
 
-    s_islandWindow.windowLevel = UIWindowLevelAlert;
+    s_islandWindow.windowLevel = UIWindowLevelStatusBar + 100.0;
     s_islandWindow.backgroundColor = [UIColor clearColor];
     s_islandWindow.userInteractionEnabled = NO;
 
-    UIViewController *overlayVC = [[UIViewController alloc] init];
+    GeraKIslandOverlayController *overlayVC = [[GeraKIslandOverlayController alloc] init];
     overlayVC.view.backgroundColor = [UIColor clearColor];
+    overlayVC.shouldHideStatusBar = YES;
     s_islandWindow.rootViewController = overlayVC;
-    s_islandWindow.hidden = NO;
+    [s_islandWindow makeKeyAndVisible];
 
     CGFloat screenW = [UIScreen mainScreen].bounds.size.width;
     CGFloat initialW = 125.0;
@@ -698,8 +710,11 @@ static UIWindow *s_islandWindow = nil;
                 island.layer.cornerRadius = initialH / 2.0;
                 island.layer.borderColor = [UIColor clearColor].CGColor;
             } completion:^(BOOL fin) {
-                [[UIApplication sharedApplication] setStatusBarHidden:NO withAnimation:UIStatusBarAnimationFade];
+                overlayVC.shouldHideStatusBar = NO;
+                [overlayVC setNeedsStatusBarAppearanceUpdate];
+
                 s_islandWindow.hidden = YES;
+                s_islandWindow.rootViewController = nil;
                 s_islandWindow = nil;
                 [self.view removeFromSuperview];
 
