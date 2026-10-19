@@ -5,9 +5,6 @@
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 
-// Отдельное окно анимации; оно никогда не становится key window.
-static UIWindow *s_islandWindow = nil;
-
 @interface WelcomeViewController ()
 @property (nonatomic, strong) UIView *solidBackdropView;
 @property (nonatomic, strong) UIView *sceneContainer;
@@ -29,6 +26,7 @@ static UIWindow *s_islandWindow = nil;
 
 @property (nonatomic, assign) BOOL heartbeatActive;
 @property (nonatomic, assign) BOOL isDismissing;
+@property (nonatomic, copy) void (^standaloneCompletion)(void);
 @property (nonatomic, strong) UIImpactFeedbackGenerator *heavyFeedback;
 @property (nonatomic, strong) UIImpactFeedbackGenerator *lightFeedback;
 @property (nonatomic, strong) UISelectionFeedbackGenerator *selectionFeedback;
@@ -104,9 +102,6 @@ static UIWindow *s_islandWindow = nil;
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor blackColor];
-    self.modalInPresentation = YES;
-    self.modalPresentationCapturesStatusBarAppearance = YES;
-
     self.solidBackdropView = [[UIView alloc] initWithFrame:self.view.bounds];
     self.solidBackdropView.backgroundColor = [UIColor blackColor];
     self.solidBackdropView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -149,9 +144,8 @@ static UIWindow *s_islandWindow = nil;
     [self setNeedsStatusBarAppearanceUpdate];
 }
 
-- (void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];
-
+- (void)beginStandalonePresentationWithCompletion:(void (^)(void))completion {
+    self.standaloneCompletion = [completion copy];
     [self startKenBurnsEffect];
 
     [self executeEntranceChoreographyWithCompletion:^{
@@ -609,68 +603,27 @@ static UIWindow *s_islandWindow = nil;
 #pragma mark - Бесшовный Dynamic Island Morphing (Pixel-Perfect под камерой)
 
 - (void)triggerSeamlessIslandMorphing {
-    // Не допускаем параллельных оверлеев при повторном вызове.
-    if (s_islandWindow) {
-        return;
-    }
+    CGFloat screenW = CGRectGetWidth(self.view.bounds);
+    const CGFloat initialW = 125.0;
+    const CGFloat initialH = 37.0;
+    const CGFloat initialX = (screenW - 125.0) / 2.0;
+    const CGFloat initialY = 11.0;
 
-    UIWindowScene *activeScene = nil;
-    if (@available(iOS 13.0, *)) {
-        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (![scene isKindOfClass:[UIWindowScene class]] ||
-                scene.activationState != UISceneActivationStateForegroundActive) {
-                continue;
-            }
+    const CGFloat expandedW = 364.0;
+    const CGFloat expandedH = 76.0;
+    const CGFloat expandedX = (screenW - 364.0) / 2.0;
+    const CGFloat expandedY = 11.0;
 
-            activeScene = (UIWindowScene *)scene;
-            break;
-        }
-    }
-
-    CGRect screenBounds = [UIScreen mainScreen].bounds;
-    CGFloat screenW = CGRectGetWidth(screenBounds);
-
-    if (@available(iOS 13.0, *)) {
-        if (activeScene) {
-            s_islandWindow = [[UIWindow alloc] initWithWindowScene:activeScene];
-        } else {
-            s_islandWindow = [[UIWindow alloc] initWithFrame:screenBounds];
-        }
-    } else {
-        s_islandWindow = [[UIWindow alloc] initWithFrame:screenBounds];
-    }
-
-    s_islandWindow.frame = screenBounds;
-    s_islandWindow.windowLevel = UIWindowLevelStatusBar + 1000.0;
-    s_islandWindow.backgroundColor = [UIColor clearColor];
-    s_islandWindow.opaque = NO;
-    s_islandWindow.userInteractionEnabled = NO;
-
-    // Обычный контроллер не меняет правила отображения статус-бара хост-приложения.
-    UIViewController *dummyVC = [[UIViewController alloc] init];
-    dummyVC.view.backgroundColor = [UIColor clearColor];
-    dummyVC.view.frame = screenBounds;
-    dummyVC.view.userInteractionEnabled = NO;
-    s_islandWindow.rootViewController = dummyVC;
-
-    // Чёрная подложка закрывает системные часы и индикаторы, не меняя safeArea хоста.
+    // Чёрная подложка остаётся под системными индикаторами на время анимации.
     UIView *statusBarCover = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, screenW, 64.0)];
     statusBarCover.backgroundColor = [UIColor blackColor];
     statusBarCover.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
-    [dummyVC.view addSubview:statusBarCover];
+    statusBarCover.userInteractionEnabled = NO;
+    [self.view addSubview:statusBarCover];
 
-    const CGFloat initialW = 125.0;
-    const CGFloat initialH = 37.0;
-    const CGFloat initialX = (screenW - initialW) / 2.0;
-    const CGFloat initialY = 11.0;
-
-    const CGFloat expandedW = MIN(screenW - 24.0, 362.0);
-    const CGFloat expandedH = 76.0;
-    const CGFloat expandedX = (screenW - expandedW) / 2.0;
-    const CGFloat expandedY = 11.0;
-
+    // Остров находится в том же overlay-view, что и заставка, без отдельного UIWindow.
     UIView *islandContainer = [[UIView alloc] initWithFrame:CGRectMake(initialX, initialY, initialW, initialH)];
-    islandContainer.backgroundColor = [UIColor blackColor];
+    islandContainer.backgroundColor = [UIColor colorWithRed:0.0 green:0.0 blue:0.0 alpha:1.0];
     islandContainer.layer.cornerRadius = 18.5;
     islandContainer.layer.borderWidth = 0.9;
     islandContainer.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.80].CGColor;
@@ -682,7 +635,7 @@ static UIWindow *s_islandWindow = nil;
     islandContainer.clipsToBounds = YES;
     islandContainer.userInteractionEnabled = NO;
 
-    UILabel *toastLabel = [[UILabel alloc] initWithFrame:CGRectMake(12.0, 47.0, expandedW - 24.0, 22.0)];
+    UILabel *toastLabel = [[UILabel alloc] initWithFrame:CGRectMake(12.0, 48.0, 364.0 - 24.0, 22.0)];
     toastLabel.text = @"🤝 Чисто по-братски, с тебя шаурма";
     toastLabel.textAlignment = NSTextAlignmentCenter;
     toastLabel.font = [UIFont fontWithName:@"Georgia-Bold" size:13.5] ?: [UIFont boldSystemFontOfSize:13.5];
@@ -690,10 +643,7 @@ static UIWindow *s_islandWindow = nil;
     toastLabel.alpha = 0.0;
     toastLabel.transform = CGAffineTransformMakeScale(0.85, 0.85);
     [islandContainer addSubview:toastLabel];
-    [dummyVC.view addSubview:islandContainer];
-
-    // Окно только показывается; оно не перехватывает фокус приложения.
-    s_islandWindow.hidden = NO;
+    [self.view addSubview:islandContainer];
 
     [UIView animateWithDuration:0.45
                           delay:0.04
@@ -734,9 +684,13 @@ static UIWindow *s_islandWindow = nil;
                     islandContainer.layer.borderColor = [UIColor colorWithRed:0.95 green:0.86 blue:0.70 alpha:0.0].CGColor;
                     islandContainer.layer.shadowOpacity = 0.0;
                 } completion:^(BOOL collapseFinished) {
-                    s_islandWindow.hidden = YES;
-                    s_islandWindow.rootViewController = nil;
-                    s_islandWindow = nil;
+                    UIView *overlayView = self.view;
+                    [overlayView removeFromSuperview];
+                    self.view = nil;
+
+                    void (^completionBlock)(void) = self.standaloneCompletion;
+                    self.standaloneCompletion = nil;
+                    if (completionBlock) completionBlock();
                 }];
             });
         }];
@@ -758,7 +712,9 @@ static UIWindow *s_islandWindow = nil;
         [self.lightFeedback impactOccurred];
     }
 
-    [UIView animateWithDuration:0.28 delay:0.0 options:UIViewAnimationOptionCurveEaseIn animations:^{
+    self.view.userInteractionEnabled = NO;
+
+    [UIView animateWithDuration:0.25 delay:0.0 options:UIViewAnimationOptionCurveEaseIn animations:^{
         self.leftPlaqueView.transform = CGAffineTransformMakeTranslation(-40, -15);
         self.leftPlaqueView.alpha = 0.0;
 
@@ -775,7 +731,6 @@ static UIWindow *s_islandWindow = nil;
         self.vignetteLayer.opacity = 0.0;
     } completion:^(BOOL finished) {
         [self triggerSeamlessIslandMorphing];
-        [self dismissViewControllerAnimated:NO completion:completion];
     }];
 }
 

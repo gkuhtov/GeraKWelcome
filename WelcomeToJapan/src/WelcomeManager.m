@@ -3,6 +3,7 @@
 
 @interface WelcomeManager ()
 @property (nonatomic, assign) BOOL isPresenting;
+@property (nonatomic, strong) WelcomeViewController *activeWelcomeController;
 @end
 
 @implementation WelcomeManager
@@ -42,17 +43,23 @@ static BOOL sessionColdLaunchHandled = NO;
     }
 
     UIWindow *keyWindow = [self resolveKeyWindow];
-    UIViewController *topVC = [self topViewControllerFrom:keyWindow.rootViewController];
+    UIViewController *rootVC = keyWindow.rootViewController;
 
-    if (topVC && ![topVC isKindOfClass:[WelcomeViewController class]]) {
-        // Фиксируем факт показа в памяти текущего процесса
+    if (keyWindow && rootVC && !self.activeWelcomeController) {
+        // Фиксируем факт показа в памяти текущего процесса.
         sessionColdLaunchHandled = YES;
         self.isPresenting = YES;
 
         WelcomeViewController *welcomeVC = [[WelcomeViewController alloc] init];
-        welcomeVC.modalPresentationStyle = UIModalPresentationFullScreen;
-        welcomeVC.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
-        [topVC presentViewController:welcomeVC animated:NO completion:^{
+        self.activeWelcomeController = welcomeVC;
+
+        UIView *welcomeView = welcomeVC.view;
+        welcomeView.frame = keyWindow.bounds;
+        welcomeView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [keyWindow addSubview:welcomeView];
+
+        [welcomeVC beginStandalonePresentationWithCompletion:^{
+            self.activeWelcomeController = nil;
             self.isPresenting = NO;
         }];
         return;
